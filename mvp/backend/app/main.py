@@ -1,0 +1,36 @@
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+
+from app import cache
+from app.services.context_engine import PersonNotFound, build_profile
+from app.services.llm_client import LLMNotConfigured, LLMRequestFailed
+
+app = FastAPI(title="Human Context AI — MVP")
+
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+
+
+@app.get("/api/person/{name}")
+async def get_person(name: str):
+    cached = cache.get(name)
+    if cached:
+        return cached
+
+    try:
+        profile = await build_profile(name)
+    except PersonNotFound:
+        raise HTTPException(status_code=404, detail=f"No public figure found for '{name}'.")
+    except LLMNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except LLMRequestFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    data = profile.model_dump(mode="json")
+    cache.put(name, data)
+    return data
+
+
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
