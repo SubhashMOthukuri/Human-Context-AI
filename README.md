@@ -35,6 +35,24 @@ Tesla, Elon Musk, Adolf Hitler): plain-language output aimed at a global
 audience, decision-level analysis instead of generic trait labels, and full
 evidence traceability on every generated claim.
 
+### Screenshots
+
+Searched "Adolf Hitler" end to end — real output, not a mockup:
+
+**Thinking Pattern** — decisions scored 1-10, every claim tagged with an
+evidence level and sourced back to Wikipedia:
+
+![Thinking Pattern](handbook/results/01-thinking-pattern.png)
+
+**Trajectory** — how each pattern strengthened or faded across life stages,
+with the same evidence trail behind every point on the chart:
+
+![Trajectory](handbook/results/02-trajectory.png)
+
+**Timeline** — the underlying facts the analysis is built on:
+
+![Timeline](handbook/results/03-timeline.png)
+
 ## Next step
 
 Phase 1 exists to validate the reasoning engine somewhere safe — public
