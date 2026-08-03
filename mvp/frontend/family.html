@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Family Ancestor Tool — Human Context AI</title>
+<link rel="stylesheet" href="/shared.css" />
+</head>
+<body>
+<main>
+  <nav class="topbar">
+    <h1 style="margin:0">Family Ancestor Tool</h1>
+    <a href="/index.html">← Public figures</a>
+  </nav>
+  <p class="tagline">
+    Private to you. No one else can see or edit your family's data — ever.
+  </p>
+  <div id="app"></div>
+</main>
+
+<script src="/shared.js"></script>
+<script>
+const app = document.getElementById("app");
+let token = localStorage.getItem("hca_token") || null;
+
+async function api(path, options = {}) {
+  const headers = Object.assign({}, options.headers, token ? { Authorization: `Bearer ${token}` } : {});
+  if (options.body) headers["Content-Type"] = "application/json";
+  const resp = await fetch(path, Object.assign({}, options, { headers }));
+  if (resp.status === 401) {
+    logout();
+    throw new Error("Session expired. Please log in again.");
+  }
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(body.detail || `Request failed (${resp.status})`);
+  return body;
+}
+
+function logout() {
+  token = null;
+  localStorage.removeItem("hca_token");
+  renderAuth();
+}
+
+// ---------- Auth screen ----------
+function renderAuth() {
+  app.innerHTML = `
+    <section class="card">
+      <h2>Log in</h2>
+      <form id="login-form">
+        <div class="field" style="flex:1">
+          <label>Email</label>
+          <input type="email" id="login-email" required autocomplete="email" />
+        </div>
+      </form>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="login-password" form="login-form" required autocomplete="current-password" />
+      </div>
+      <button id="login-btn" type="submit" form="login-form">Log in</button>
+      <p class="error" id="login-error" style="display:none"></p>
+    </section>
+    <section class="card">
+      <h2>Or create an account</h2>
+      <form id="signup-form">
+        <div class="field" style="flex:1">
+          <label>Email</label>
+          <input type="email" id="signup-email" required autocomplete="email" />
+        </div>
+      </form>
+      <div class="field">
+        <label>Password (min 8 characters)</label>
+        <input type="password" id="signup-password" form="signup-form" required minlength="8" autocomplete="new-password" />
+      </div>
+      <button id="signup-btn" type="submit" form="signup-form">Sign up</button>
+      <p class="error" id="signup-error" style="display:none"></p>
+    </section>`;
+
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("login-error");
+    errEl.style.display = "none";
+    try {
+      const body = await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email: document.getElementById("login-email").value,
+          password: document.getElementById("login-password").value,
+        }),
+      });
+      token = body.access_token;
+      localStorage.setItem("hca_token", token);
+      renderFamilies();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = "block";
+    }
+  });
+
+  document.getElementById("signup-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("signup-error");
+    errEl.style.display = "none";
+    try {
+      const body = await api("/api/auth/signup", {
+        method: "POST",
+        body: JSON.stringify({
+          email: document.getElementById("signup-email").value,
+          password: document.getElementById("signup-password").value,
+        }),
+      });
+      token = body.access_token;
+      localStorage.setItem("hca_token", token);
+      renderFamilies();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = "block";
+    }
+  });
+}
+
+// ---------- Families screen ----------
+async function renderFamilies() {
+  app.innerHTML = `<p class="status">Loading your families…</p>`;
+  let families;
+  try {
+    families = await api("/api/families");
+  } catch (err) {
+    app.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+    return;
+  }
+
+  app.innerHTML = `
+    <nav class="topbar">
+      <span></span>
+      <a href="#" id="logout-link">Log out</a>
+    </nav>
+    <section class="card">
+      <h2>Your Families</h2>
+      ${families.length ? families.map(f => `
+        <div class="list-item" data-id="${f.id}" data-name="${escapeHtml(f.name)}">
+          <span>${escapeHtml(f.name)}</span>
+          <span class="muted-inline">${new Date(f.created_at).toLocaleDateString()}</span>
+        </div>`).join("") : `<p class="note">No families yet — add one below.</p>`}
+    </section>
+    <section class="card">
+      <h2>Add a Family</h2>
+      <form id="family-form">
+        <input type="text" id="family-name" placeholder="e.g. The Mothukuri Family" required />
+        <button type="submit">Create</button>
+      </form>
+      <p class="error" id="family-error" style="display:none"></p>
+    </section>`;
+
+  document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logout(); });
+
+  app.querySelectorAll(".list-item").forEach(el => {
+    el.addEventListener("click", () => renderAncestors(Number(el.dataset.id), el.dataset.name));
+  });
+
+  document.getElementById("family-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("family-error");
+    errEl.style.display = "none";
+    try {
+      await api("/api/families", {
+        method: "POST",
+        body: JSON.stringify({ name: document.getElementById("family-name").value }),
+      });
+      renderFamilies();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = "block";
+    }
+  });
+}
+
+// ---------- Ancestors screen ----------
+async function renderAncestors(familyId, familyName) {
+  app.innerHTML = `<p class="status">Loading ${escapeHtml(familyName)}…</p>`;
+  let ancestors;
+  try {
+    ancestors = await api(`/api/families/${familyId}/ancestors`);
+  } catch (err) {
+    app.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+    return;
+  }
+
+  app.innerHTML = `
+    <nav class="topbar">
+      <a href="#" id="back-link">← All families</a>
+      <a href="#" id="logout-link">Log out</a>
+    </nav>
+    <section class="card">
+      <h2>${escapeHtml(familyName)}</h2>
+      ${ancestors.length ? ancestors.map(a => `
+        <div class="list-item" data-id="${a.id}" data-name="${escapeHtml(a.name)}">
+          <span>${escapeHtml(a.name)} <span class="pill">${escapeHtml(a.relation)}</span></span>
+          <span class="muted-inline">${a.has_profile ? "Profile ready" : "Not yet explained"}</span>
+        </div>`).join("") : `<p class="note">No one added yet — add someone below.</p>`}
+    </section>
+    <section class="card">
+      <h2>Add Someone</h2>
+      <form id="ancestor-form">
+        <div class="field">
+          <label>Name</label>
+          <input type="text" id="a-name" required />
+        </div>
+        <div class="field">
+          <label>Relation to you (e.g. Grandfather, Great-grandmother)</label>
+          <input type="text" id="a-relation" required />
+        </div>
+        <div class="field">
+          <label>Born (year, place — optional)</label>
+          <input type="text" id="a-birth-year" placeholder="Year" style="margin-bottom:0.5rem" />
+          <input type="text" id="a-birth-place" placeholder="Place" />
+        </div>
+        <div class="field">
+          <label>Died (year, place — optional, leave blank if living)</label>
+          <input type="text" id="a-death-year" placeholder="Year" style="margin-bottom:0.5rem" />
+          <input type="text" id="a-death-place" placeholder="Place" />
+        </div>
+        <div class="field">
+          <label>What do you remember about them? Write as much as you know — specific decisions, stories, what they were like. The more detail, the better this works.</label>
+          <textarea id="a-notes" rows="8" required></textarea>
+        </div>
+        <button type="submit">Add</button>
+      </form>
+      <p class="error" id="ancestor-error" style="display:none"></p>
+    </section>`;
+
+  document.getElementById("back-link").addEventListener("click", (e) => { e.preventDefault(); renderFamilies(); });
+  document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logout(); });
+
+  app.querySelectorAll(".list-item").forEach(el => {
+    el.addEventListener("click", () => renderAncestorProfile(familyId, familyName, Number(el.dataset.id), el.dataset.name));
+  });
+
+  document.getElementById("ancestor-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("ancestor-error");
+    errEl.style.display = "none";
+    try {
+      await api(`/api/families/${familyId}/ancestors`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: document.getElementById("a-name").value,
+          relation: document.getElementById("a-relation").value,
+          birth_year: document.getElementById("a-birth-year").value || null,
+          birth_place: document.getElementById("a-birth-place").value || null,
+          death_year: document.getElementById("a-death-year").value || null,
+          death_place: document.getElementById("a-death-place").value || null,
+          notes: document.getElementById("a-notes").value,
+        }),
+      });
+      renderAncestors(familyId, familyName);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = "block";
+    }
+  });
+}
+
+// ---------- Ancestor profile screen ----------
+async function renderAncestorProfile(familyId, familyName, ancestorId, ancestorName) {
+  app.innerHTML = `
+    <nav class="topbar">
+      <a href="#" id="back-link">← ${escapeHtml(familyName)}</a>
+      <a href="#" id="logout-link">Log out</a>
+    </nav>
+    <p class="status">Putting together what we know about ${escapeHtml(ancestorName)}… this can take up to a minute.</p>
+    <div id="profile-results"></div>`;
+
+  document.getElementById("back-link").addEventListener("click", (e) => { e.preventDefault(); renderAncestors(familyId, familyName); });
+  document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logout(); });
+
+  const resultsEl = document.getElementById("profile-results");
+  try {
+    const profile = await api(`/api/families/${familyId}/ancestors/${ancestorId}/profile`);
+    document.querySelector("main > p.status")?.remove();
+    renderProfile(profile, resultsEl);
+  } catch (err) {
+    document.querySelector("main > p.status")?.remove();
+    resultsEl.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+// ---------- Boot ----------
+if (token) {
+  renderFamilies();
+} else {
+  renderAuth();
+}
+</script>
+</body>
+</html>

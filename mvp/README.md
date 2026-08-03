@@ -75,19 +75,61 @@ premature for proving the core loop works. This is one FastAPI service,
 SQLite for caching, and a single static HTML page. Upgrade pieces only when
 this MVP's limits actually show up in practice.
 
-## Next step
+---
 
-This phase exists to validate the reasoning engine somewhere safe: public
-figures, abundant documentation, no consent issues. The actual motivation
-for this project (see `../handbook/founding-problem.md`) is family memory —
-preserving a real person's story for descendants who never met them.
-That's next, and it changes the architecture in ways this phase never had
-to deal with:
-- User accounts and **strict per-family data isolation** — a hard boundary,
-  not a configurable permission: no user ever sees or edits another
-  family's data.
-- Manual/uploaded input instead of Wikipedia — families don't have Wikipedia
-  pages, so the fact-gathering layer has to change from "search public web"
-  to "structure what a family member types in or uploads."
-- Durability practices beyond a disposable SQLite cache, since this data is
-  meant to last, not just to avoid re-billing an API call.
+# Family Ancestor Tool (Phase 2 — the actual motivation)
+
+Phase 1 validated the reasoning engine somewhere safe: public figures,
+abundant documentation, no consent issues. The actual motivation for this
+project (see `../handbook/founding-problem.md`) is family memory —
+preserving a real person's story for descendants who never met them. This
+is that: the same engine, rebuilt around a private, per-family, user-input
+model instead of a public search box.
+
+## What's different from Phase 1
+
+- **Accounts + strict per-family data isolation.** Every family belongs to
+  exactly one user. Every query — list families, list ancestors, view a
+  profile — is filtered by ownership at the database layer, and a family
+  that isn't yours returns 404, not 403: the app won't even confirm another
+  user's family exists. Verified directly: a second account gets an empty
+  family list and a 404 on the first account's family id, not an error that
+  leaks its existence.
+- **Notes instead of Wikipedia.** There's no public page to scrape, so a
+  family member types in whatever they remember — name, relation,
+  approximate dates/places, and free-text notes. The engine never invents
+  beyond what's written plus general, well-known historical context for the
+  stated time and place — and says so via a third Evidence Hierarchy
+  source label: **"Family account"** for what was actually written, vs.
+  **"General historical context, not specific to this family"** for
+  everything the AI added from general knowledge. Getting this wrong isn't
+  a quality bug here — see the handbook's founding problem — so the engine
+  is instructed to return a short, honest, sparse profile rather than pad
+  out thin notes with plausible invention.
+- **Same output shape.** Timeline, Environment, Thinking Pattern, Trajectory,
+  Stage by Stage, Why — identical structure and rendering to Phase 1, reused
+  via a shared `shared.js`/`shared.css` rather than duplicated.
+
+## Screenshots
+
+Real run: an account, a family, one grandmother entered from a paragraph of
+memories, profile generated end to end.
+
+![Add an ancestor](results/01-add-ancestor.png)
+
+![Generated profile — Thinking Pattern, Trajectory, Stage by Stage, Why, Environment, Timeline](results/02-ancestor-profile.png)
+
+## Running it
+
+Same server as Phase 1 (`uvicorn app.main:app --reload --port 8000`) — it
+now also creates `family.sqlite3` on first run and serves `/family.html`
+alongside the Phase 1 search page at `/index.html`. Set `JWT_SECRET_KEY` in
+`.env` (see `.env.example`) so logins survive a server restart.
+
+## Still ahead
+
+- Sharing a family across more than one account (currently ownership = the
+  only member; no invite/multi-member model yet)
+- Uploads (photos, letters, documents) as evidence, not just typed notes
+- Durability practices beyond SQLite — this data is meant to last, not just
+  avoid re-billing an API call

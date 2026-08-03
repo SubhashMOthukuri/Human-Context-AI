@@ -53,15 +53,25 @@ with the same evidence trail behind every point on the chart:
 
 ![Timeline](handbook/results/03-timeline.png)
 
-## Next step
+## Phase 2: Family Ancestor Tool — also live
 
-Phase 1 exists to validate the reasoning engine somewhere safe — public
+Phase 1 existed to validate the reasoning engine somewhere safe — public
 figures, abundant documentation, no consent issues. The actual motivation
 (see [`handbook/founding-problem.md`](handbook/founding-problem.md)) is
 preserving one real family's memory for its own descendants, not historical
-trivia. That's next: the same engine, rebuilt for a single family, with user
-accounts and strict per-family data isolation as a hard boundary from day
-one — no cross-family access, ever.
+trivia. That's built now: the same engine, private per account, with
+**strict per-family data isolation as a hard boundary** — every family
+query is filtered by ownership at the database layer, and a family that
+isn't yours 404s rather than confirming it exists. Verified directly with
+two separate accounts, not assumed.
+
+Input is typed family notes instead of Wikipedia, and the evidence labels
+change to match: **"Family account"** for what was actually written vs.
+**"General historical context, not specific to this family"** for anything
+the AI added from general knowledge — the engine is instructed to keep a
+profile short and honest on thin notes rather than invent detail to fill it
+out. See [`mvp/README.md`](mvp/README.md) for the full writeup and
+screenshots.
 
 ## Tech stack
 

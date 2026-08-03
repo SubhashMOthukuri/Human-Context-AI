@@ -18,7 +18,7 @@ class EvidenceLevel(IntEnum):
 
 class SourceRef(BaseModel):
     title: str
-    url: str
+    url: str | None = None  # family-provided sources (a memory, a letter) have no URL
 
 
 class EvidencedClaim(BaseModel):

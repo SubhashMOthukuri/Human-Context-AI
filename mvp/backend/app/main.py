@@ -3,13 +3,20 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
-from app import cache
+from app import cache, db_models  # noqa: F401 -- import registers models on Base.metadata
+from app.db import Base, engine
+from app.routers import auth_router, family_router
 from app.services.context_engine import PersonNotFound, build_profile
 from app.services.llm_client import LLMNotConfigured, LLMRequestFailed
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Human Context AI — MVP")
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+
+app.include_router(auth_router.router)
+app.include_router(family_router.router)
 
 
 @app.get("/api/person/{name}")
