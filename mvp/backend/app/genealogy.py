@@ -17,6 +17,14 @@ _SAME_WORDS = (
 def infer_generation(relation: str) -> int:
     r = relation.lower()
 
+    if "in-law" in r or "in law" in r:
+        # "Son-in-law", "daughter-in-law", etc. describe a marriage, not a
+        # blood generation — the base word (son/daughter/...) doesn't say
+        # what generation they married into. An explicit spouse link is the
+        # correct way to place them; without one, default to the same
+        # generation as a neutral guess rather than misreading the word.
+        return 0
+
     if "grand" in r:
         greats = r.count("great")
         if any(w in r for w in _DOWN_WORDS):
@@ -33,12 +41,18 @@ def infer_generation(relation: str) -> int:
 
 
 def compute_generation(ancestor_id: int, by_id: dict[int, "AncestorLike"]) -> int:  # noqa: F821
-    """Walks spouse links (same generation, no hop) and parent links (one
-    generation older per hop) until reaching a node with neither — a root,
+    """Walks parent links (one generation older per hop) and spouse links
+    (same generation, no hop) until reaching a node with neither — a root,
     a dangling reference, or a cycle — then applies that node's own
     relation-word guess as the base. Always bounded: each ancestor is
     visited at most once, so a mutual spouse link or a parent cycle can't
-    loop forever."""
+    loop forever.
+
+    Parent is checked before spouse at every step, deliberately: a person's
+    own recorded parents are more authoritative than transitively borrowing
+    a generation through whoever they married. Spouse is only a fallback
+    for someone who married in with no parents of their own on record —
+    it should never override a person's own, perfectly good parent link."""
     node = by_id.get(ancestor_id)
     if node is None:
         return 0
@@ -49,13 +63,13 @@ def compute_generation(ancestor_id: int, by_id: dict[int, "AncestorLike"]) -> in
     while current.id not in seen:
         seen.add(current.id)
 
-        if current.spouse_ancestor_id is not None and current.spouse_ancestor_id in by_id:
-            current = by_id[current.spouse_ancestor_id]
-            continue
-
         if current.parent_ancestor_id is not None and current.parent_ancestor_id in by_id:
             hops += 1
             current = by_id[current.parent_ancestor_id]
+            continue
+
+        if current.spouse_ancestor_id is not None and current.spouse_ancestor_id in by_id:
+            current = by_id[current.spouse_ancestor_id]
             continue
 
         break  # no more links — this is the root the guess is based on
