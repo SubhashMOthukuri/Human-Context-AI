@@ -24,7 +24,10 @@ router = APIRouter(prefix="/api/families", tags=["families"])
 def _get_owned_family(family_id: int, user: User, db: Session) -> Family:
     """The hard isolation boundary: a family that isn't yours doesn't exist
     as far as any request is concerned. 404, never 403 — don't even confirm
-    that a family with this id belongs to someone else."""
+    that a family with this id belongs to someone else. This is a boundary
+    between USERS, not between a user's own families — someone's own
+    families can freely link to each other (a marriage connects two
+    lineages), since it's all still only visible to them."""
     family = (
         db.query(Family).filter(Family.id == family_id, Family.owner_user_id == user.id).first()
     )
@@ -45,25 +48,28 @@ def _get_owned_ancestor(family_id: int, ancestor_id: int, user: User, db: Sessio
     return ancestor
 
 
+def _user_ancestors_by_id(user: User, db: Session) -> dict[int, AncestorProfile]:
+    """Every ancestor across every one of this user's families — the scope
+    for both generation math and link validation, since links are allowed
+    to cross a user's own family boundaries."""
+    rows = (
+        db.query(AncestorProfile)
+        .join(Family, Family.id == AncestorProfile.family_id)
+        .filter(Family.owner_user_id == user.id)
+        .all()
+    )
+    return {a.id: a for a in rows}
+
+
 def _validate_link(
-    family_id: int, linked_id: int | None, self_id: int | None, db: Session, what: str
+    by_id: dict[int, AncestorProfile], linked_id: int | None, self_id: int | None, what: str
 ) -> None:
     if linked_id is None:
         return
     if linked_id == self_id:
         raise HTTPException(status_code=400, detail=f"Someone can't be their own {what}.")
-    linked = (
-        db.query(AncestorProfile)
-        .filter(AncestorProfile.id == linked_id, AncestorProfile.family_id == family_id)
-        .first()
-    )
-    if linked is None:
-        raise HTTPException(status_code=400, detail=f"That {what} isn't in this family.")
-
-
-def _family_ancestors_by_id(family_id: int, db: Session) -> dict[int, AncestorProfile]:
-    rows = db.query(AncestorProfile).filter(AncestorProfile.family_id == family_id).all()
-    return {a.id: a for a in rows}
+    if linked_id not in by_id:
+        raise HTTPException(status_code=400, detail=f"That {what} isn't one of your own people.")
 
 
 def _summary(a: AncestorProfile, by_id: dict[int, AncestorProfile]) -> AncestorSummaryResponse:
@@ -82,6 +88,8 @@ def _summary(a: AncestorProfile, by_id: dict[int, AncestorProfile]) -> AncestorS
         death_year=a.death_year,
         death_place=a.death_place,
         notes=a.notes,
+        family_id=a.family_id,
+        family_name=by_id[a.id].family.name if a.id in by_id else None,
     )
 
 
@@ -123,6 +131,16 @@ def delete_family(family_id: int, user: User = Depends(get_current_user), db: Se
     return {"deleted": True}
 
 
+@router.get("/ancestors/all", response_model=list[AncestorSummaryResponse])
+def list_all_ancestors(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Every person across every one of the user's families — used by the
+    Add/Edit form to let a parent/spouse/second-parent link point at
+    someone in a *different* family than the one currently being edited."""
+    by_id = _user_ancestors_by_id(user, db)
+    ancestors = sorted(by_id.values(), key=lambda a: a.created_at)
+    return [_summary(a, by_id) for a in ancestors]
+
+
 @router.post("/{family_id}/ancestors", response_model=AncestorSummaryResponse)
 def create_ancestor(
     family_id: int,
@@ -131,9 +149,10 @@ def create_ancestor(
     db: Session = Depends(get_db),
 ):
     family = _get_owned_family(family_id, user, db)
-    _validate_link(family.id, body.parent_ancestor_id, None, db, "parent")
-    _validate_link(family.id, body.parent2_ancestor_id, None, db, "second parent")
-    _validate_link(family.id, body.spouse_ancestor_id, None, db, "spouse")
+    by_id = _user_ancestors_by_id(user, db)
+    _validate_link(by_id, body.parent_ancestor_id, None, "parent")
+    _validate_link(by_id, body.parent2_ancestor_id, None, "second parent")
+    _validate_link(by_id, body.spouse_ancestor_id, None, "spouse")
     ancestor = AncestorProfile(
         family_id=family.id,
         name=body.name,
@@ -150,15 +169,17 @@ def create_ancestor(
     db.add(ancestor)
     db.commit()
     db.refresh(ancestor)
-    by_id = _family_ancestors_by_id(family.id, db)
+    by_id[ancestor.id] = ancestor
     return _summary(ancestor, by_id)
 
 
 @router.get("/{family_id}/ancestors", response_model=list[AncestorSummaryResponse])
 def list_ancestors(family_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     family = _get_owned_family(family_id, user, db)
-    by_id = _family_ancestors_by_id(family.id, db)
-    ancestors = sorted(by_id.values(), key=lambda a: a.created_at)
+    by_id = _user_ancestors_by_id(user, db)  # user-wide, so cross-family links resolve
+    ancestors = sorted(
+        (a for a in by_id.values() if a.family_id == family.id), key=lambda a: a.created_at
+    )
     return [_summary(a, by_id) for a in ancestors]
 
 
@@ -171,9 +192,10 @@ def update_ancestor(
     db: Session = Depends(get_db),
 ):
     ancestor = _get_owned_ancestor(family_id, ancestor_id, user, db)
-    _validate_link(family_id, body.parent_ancestor_id, ancestor.id, db, "parent")
-    _validate_link(family_id, body.parent2_ancestor_id, ancestor.id, db, "second parent")
-    _validate_link(family_id, body.spouse_ancestor_id, ancestor.id, db, "spouse")
+    by_id = _user_ancestors_by_id(user, db)
+    _validate_link(by_id, body.parent_ancestor_id, ancestor.id, "parent")
+    _validate_link(by_id, body.parent2_ancestor_id, ancestor.id, "second parent")
+    _validate_link(by_id, body.spouse_ancestor_id, ancestor.id, "spouse")
     ancestor.name = body.name
     ancestor.relation = body.relation
     ancestor.birth_year = body.birth_year
@@ -187,7 +209,7 @@ def update_ancestor(
     ancestor.generated_profile_json = None  # edited notes invalidate the old generated profile
     db.commit()
     db.refresh(ancestor)
-    by_id = _family_ancestors_by_id(ancestor.family_id, db)
+    by_id[ancestor.id] = ancestor
     return _summary(ancestor, by_id)
 
 

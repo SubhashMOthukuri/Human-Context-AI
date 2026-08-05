@@ -217,20 +217,26 @@ async function renderFamilies() {
 // ---------- Ancestors screen ----------
 async function renderAncestors(familyId, familyName, editingId) {
   app.innerHTML = `<p class="status">Loading ${escapeHtml(familyName)}…</p>`;
-  let ancestors;
+  let ancestors, allAncestors;
   try {
-    ancestors = await api(`/api/families/${familyId}/ancestors`);
+    [ancestors, allAncestors] = await Promise.all([
+      api(`/api/families/${familyId}/ancestors`),
+      api(`/api/families/ancestors/all`),
+    ]);
   } catch (err) {
     app.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
     return;
   }
 
   const editing = editingId ? ancestors.find(a => a.id === editingId) : null;
-  const linkableOthers = ancestors.filter(a => a.id !== editingId);
+  // Linking can cross into a *different* one of your own families (e.g. a
+  // marriage connecting two family trees) — not just people in this one.
+  const linkableOthers = allAncestors.filter(a => a.id !== editingId);
 
-  const optionsFor = (selectedId) => linkableOthers.map(a =>
-    `<option value="${a.id}" ${selectedId === a.id ? "selected" : ""}>${escapeHtml(a.name)} (${escapeHtml(a.relation)})</option>`
-  ).join("");
+  const optionsFor = (selectedId) => linkableOthers.map(a => {
+    const familyTag = a.family_id !== familyId ? ` — ${a.family_name}` : "";
+    return `<option value="${a.id}" ${selectedId === a.id ? "selected" : ""}>${escapeHtml(a.name)} (${escapeHtml(a.relation)})${escapeHtml(familyTag)}</option>`;
+  }).join("");
 
   app.innerHTML = `
     <nav class="topbar">
@@ -312,7 +318,7 @@ async function renderAncestors(familyId, familyName, editingId) {
 
   document.getElementById("tree-link").addEventListener("click", (e) => {
     e.preventDefault();
-    renderTree(familyId, familyName, ancestors);
+    renderTree(familyId, familyName, ancestors, allAncestors);
   });
 
   document.getElementById("rename-family-link").addEventListener("click", async (e) => {
@@ -389,9 +395,12 @@ async function renderAncestors(familyId, familyName, editingId) {
 }
 
 // ---------- Tree screen ----------
-function renderTree(familyId, familyName, ancestors) {
+function renderTree(familyId, familyName, ancestors, allAncestors) {
+  // Nodes rendered are only this family's people, but link captions (a
+  // spouse or parent in a *different* one of your families) still need to
+  // resolve to a name, so the lookup spans everyone, not just this family.
   const byId = {};
-  ancestors.forEach(a => { byId[a.id] = a; });
+  (allAncestors || ancestors).forEach(a => { byId[a.id] = a; });
 
   const generations = {};
   ancestors.forEach(a => {

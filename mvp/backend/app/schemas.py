@@ -75,5 +75,7 @@ class AncestorSummaryResponse(BaseModel):
     death_year: str | None = None
     death_place: str | None = None
     notes: str = ""
+    family_id: int
+    family_name: str | None = None
 
     model_config = {"from_attributes": True}
