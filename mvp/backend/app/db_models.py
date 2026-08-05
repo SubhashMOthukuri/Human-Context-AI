@@ -59,6 +59,14 @@ class AncestorProfile(Base):
     parent_ancestor_id: Mapped[int | None] = mapped_column(
         ForeignKey("ancestor_profiles.id"), nullable=True, index=True
     )
+    # A child usually has two parents, not one — this is the second (e.g.
+    # the mother, if `parent_ancestor_id` holds the father). Only used for
+    # display ("child of X and Y"); generation is computed from
+    # `parent_ancestor_id` alone, since both parents should already land on
+    # the same generation via their own spouse link.
+    parent2_ancestor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ancestor_profiles.id"), nullable=True, index=True
+    )
     # Same generation as the linked ancestor (e.g. a wife linked to her
     # husband) — a parent link would incorrectly place them one generation
     # below instead of beside.

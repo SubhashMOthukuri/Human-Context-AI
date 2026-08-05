@@ -267,10 +267,17 @@ async function renderAncestors(familyId, familyName, editingId) {
           <input type="text" id="a-relation" value="${editing ? escapeHtml(editing.relation) : ""}" required />
         </div>
         <div class="field">
-          <label>Parent in this tree (optional — pick who their mother or father is, if already added)</label>
+          <label>Parent in this tree (optional — pick one of their parents, if already added)</label>
           <select id="a-parent">
             <option value="">— none / not sure —</option>
             ${optionsFor(editing ? editing.parent_ancestor_id : null)}
+          </select>
+        </div>
+        <div class="field">
+          <label>Second parent (optional — a child usually has two; pick the other one if they're already added too)</label>
+          <select id="a-parent2">
+            <option value="">— none / not sure —</option>
+            ${optionsFor(editing ? editing.parent2_ancestor_id : null)}
           </select>
         </div>
         <div class="field">
@@ -364,6 +371,7 @@ async function renderAncestors(familyId, familyName, editingId) {
       death_place: document.getElementById("a-death-place").value || null,
       notes: document.getElementById("a-notes").value,
       parent_ancestor_id: document.getElementById("a-parent").value ? Number(document.getElementById("a-parent").value) : null,
+      parent2_ancestor_id: document.getElementById("a-parent2").value ? Number(document.getElementById("a-parent2").value) : null,
       spouse_ancestor_id: document.getElementById("a-spouse").value ? Number(document.getElementById("a-spouse").value) : null,
     };
     try {
@@ -403,9 +411,14 @@ function renderTree(familyId, familyName, ancestors) {
             <div class="tree-node" data-id="${a.id}" data-name="${escapeHtml(a.name)}">
               <strong>${escapeHtml(a.name)}</strong>
               <div class="muted-inline">${escapeHtml(a.relation)}</div>
-              ${a.parent_ancestor_id && byId[a.parent_ancestor_id]
-                ? `<div class="tree-parent-caption">↑ child of ${escapeHtml(byId[a.parent_ancestor_id].name)}</div>`
-                : ""}
+              ${(() => {
+                const parents = [a.parent_ancestor_id, a.parent2_ancestor_id]
+                  .filter(id => id && byId[id])
+                  .map(id => byId[id].name);
+                return parents.length
+                  ? `<div class="tree-parent-caption">↑ child of ${escapeHtml(parents.join(" and "))}</div>`
+                  : "";
+              })()}
               ${a.spouse_ancestor_id && byId[a.spouse_ancestor_id]
                 ? `<div class="tree-parent-caption">⚭ spouse of ${escapeHtml(byId[a.spouse_ancestor_id].name)}</div>`
                 : ""}

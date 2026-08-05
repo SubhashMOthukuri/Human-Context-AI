@@ -74,6 +74,7 @@ def _summary(a: AncestorProfile, by_id: dict[int, AncestorProfile]) -> AncestorS
         created_at=a.created_at,
         has_profile=a.generated_profile_json is not None,
         parent_ancestor_id=a.parent_ancestor_id,
+        parent2_ancestor_id=a.parent2_ancestor_id,
         spouse_ancestor_id=a.spouse_ancestor_id,
         generation=compute_generation(a.id, by_id),
         birth_year=a.birth_year,
@@ -131,6 +132,7 @@ def create_ancestor(
 ):
     family = _get_owned_family(family_id, user, db)
     _validate_link(family.id, body.parent_ancestor_id, None, db, "parent")
+    _validate_link(family.id, body.parent2_ancestor_id, None, db, "second parent")
     _validate_link(family.id, body.spouse_ancestor_id, None, db, "spouse")
     ancestor = AncestorProfile(
         family_id=family.id,
@@ -142,6 +144,7 @@ def create_ancestor(
         death_place=body.death_place,
         notes=body.notes,
         parent_ancestor_id=body.parent_ancestor_id,
+        parent2_ancestor_id=body.parent2_ancestor_id,
         spouse_ancestor_id=body.spouse_ancestor_id,
     )
     db.add(ancestor)
@@ -169,6 +172,7 @@ def update_ancestor(
 ):
     ancestor = _get_owned_ancestor(family_id, ancestor_id, user, db)
     _validate_link(family_id, body.parent_ancestor_id, ancestor.id, db, "parent")
+    _validate_link(family_id, body.parent2_ancestor_id, ancestor.id, db, "second parent")
     _validate_link(family_id, body.spouse_ancestor_id, ancestor.id, db, "spouse")
     ancestor.name = body.name
     ancestor.relation = body.relation
@@ -178,6 +182,7 @@ def update_ancestor(
     ancestor.death_place = body.death_place
     ancestor.notes = body.notes
     ancestor.parent_ancestor_id = body.parent_ancestor_id
+    ancestor.parent2_ancestor_id = body.parent2_ancestor_id
     ancestor.spouse_ancestor_id = body.spouse_ancestor_id
     ancestor.generated_profile_json = None  # edited notes invalidate the old generated profile
     db.commit()

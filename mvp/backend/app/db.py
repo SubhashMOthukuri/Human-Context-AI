@@ -31,9 +31,7 @@ def run_migrations() -> None:
     if "ancestor_profiles" not in inspector.get_table_names():
         return
     existing_columns = {c["name"] for c in inspector.get_columns("ancestor_profiles")}
-    if "parent_ancestor_id" not in existing_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE ancestor_profiles ADD COLUMN parent_ancestor_id INTEGER"))
-    if "spouse_ancestor_id" not in existing_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE ancestor_profiles ADD COLUMN spouse_ancestor_id INTEGER"))
+    for column in ("parent_ancestor_id", "parent2_ancestor_id", "spouse_ancestor_id"):
+        if column not in existing_columns:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE ancestor_profiles ADD COLUMN {column} INTEGER"))
