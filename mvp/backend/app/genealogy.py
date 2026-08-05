@@ -1,9 +1,10 @@
 """Turns a free-text relation ("Great-grandfather") into a generation offset
 relative to the account owner (generation 0), for laying out the family
 tree older-to-younger, top to bottom. This is only a fallback guess — an
-explicit `parent_ancestor_id` link always wins, because it's the only way
-to know a grandparent belongs above one specific parent rather than just
-"further up" in general.
+explicit `parent_ancestor_id` or `spouse_ancestor_id` link always wins,
+because it's the only way to know a grandparent belongs above one specific
+parent (or a wife belongs beside her husband, not below him) rather than
+just "somewhere near" in general.
 """
 
 _UP_WORDS = ("mother", "father", "mom", "dad", "papa", "mama", "parent", "aunt", "uncle")
@@ -32,10 +33,12 @@ def infer_generation(relation: str) -> int:
 
 
 def compute_generation(ancestor_id: int, by_id: dict[int, "AncestorLike"]) -> int:  # noqa: F821
-    """Walks the explicit parent_ancestor_id chain when present, falling back
-    to the relation-word guess at whichever node ends the chain — a root
-    (no parent link), a dangling reference, or a cycle. Always bounded:
-    each ancestor is visited at most once."""
+    """Walks spouse links (same generation, no hop) and parent links (one
+    generation older per hop) until reaching a node with neither — a root,
+    a dangling reference, or a cycle — then applies that node's own
+    relation-word guess as the base. Always bounded: each ancestor is
+    visited at most once, so a mutual spouse link or a parent cycle can't
+    loop forever."""
     node = by_id.get(ancestor_id)
     if node is None:
         return 0
@@ -43,16 +46,20 @@ def compute_generation(ancestor_id: int, by_id: dict[int, "AncestorLike"]) -> in
     seen: set[int] = set()
     hops = 0
     current = node
-    while current.parent_ancestor_id is not None:
-        if current.id in seen:
-            break  # cycle — stop and use `current`'s own relation word below
+    while current.id not in seen:
         seen.add(current.id)
-        parent = by_id.get(current.parent_ancestor_id)
-        if parent is None:
-            break  # dangling reference — same fallback
-        hops += 1
-        current = parent
 
-    # `current` is the root of the chain (oldest ancestor found); the node we
-    # started from is `hops` generations YOUNGER than that root.
+        if current.spouse_ancestor_id is not None and current.spouse_ancestor_id in by_id:
+            current = by_id[current.spouse_ancestor_id]
+            continue
+
+        if current.parent_ancestor_id is not None and current.parent_ancestor_id in by_id:
+            hops += 1
+            current = by_id[current.parent_ancestor_id]
+            continue
+
+        break  # no more links — this is the root the guess is based on
+
+    # `current` is the root of the chain; the node we started from is
+    # `hops` generations YOUNGER than that root (spouse hops don't count).
     return infer_generation(current.relation) - hops

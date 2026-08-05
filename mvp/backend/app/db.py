@@ -34,3 +34,6 @@ def run_migrations() -> None:
     if "parent_ancestor_id" not in existing_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE ancestor_profiles ADD COLUMN parent_ancestor_id INTEGER"))
+    if "spouse_ancestor_id" not in existing_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE ancestor_profiles ADD COLUMN spouse_ancestor_id INTEGER"))

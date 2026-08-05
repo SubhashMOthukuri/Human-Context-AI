@@ -215,7 +215,7 @@ async function renderFamilies() {
 }
 
 // ---------- Ancestors screen ----------
-async function renderAncestors(familyId, familyName) {
+async function renderAncestors(familyId, familyName, editingId) {
   app.innerHTML = `<p class="status">Loading ${escapeHtml(familyName)}…</p>`;
   let ancestors;
   try {
@@ -224,6 +224,13 @@ async function renderAncestors(familyId, familyName) {
     app.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
     return;
   }
+
+  const editing = editingId ? ancestors.find(a => a.id === editingId) : null;
+  const linkableOthers = ancestors.filter(a => a.id !== editingId);
+
+  const optionsFor = (selectedId) => linkableOthers.map(a =>
+    `<option value="${a.id}" ${selectedId === a.id ? "selected" : ""}>${escapeHtml(a.name)} (${escapeHtml(a.relation)})</option>`
+  ).join("");
 
   app.innerHTML = `
     <nav class="topbar">
@@ -242,44 +249,53 @@ async function renderAncestors(familyId, familyName) {
         <div class="list-item" data-id="${a.id}" data-name="${escapeHtml(a.name)}">
           <span>${escapeHtml(a.name)} <span class="pill">${escapeHtml(a.relation)}</span></span>
           <span class="item-actions">
+            <a href="#" class="edit-ancestor-link" data-id="${a.id}">Edit</a>
             <a href="#" class="delete-ancestor-link" data-id="${a.id}" data-name="${escapeHtml(a.name)}">Delete</a>
             <span class="muted-inline">${a.has_profile ? "Profile ready" : "Not yet explained"}</span>
           </span>
         </div>`).join("") : `<p class="note">No one added yet — add someone below.</p>`}
     </section>
     <section class="card">
-      <h2>Add Someone</h2>
+      <h2>${editing ? `Edit ${escapeHtml(editing.name)}` : "Add Someone"}</h2>
       <form id="ancestor-form">
         <div class="field">
           <label>Name</label>
-          <input type="text" id="a-name" required />
+          <input type="text" id="a-name" value="${editing ? escapeHtml(editing.name) : ""}" required />
         </div>
         <div class="field">
           <label>Relation to you (e.g. Grandfather, Great-grandmother)</label>
-          <input type="text" id="a-relation" required />
+          <input type="text" id="a-relation" value="${editing ? escapeHtml(editing.relation) : ""}" required />
         </div>
         <div class="field">
-          <label>Parent in this tree (optional — pick who their mother or father is, if already added, so the tree nests them in the right spot)</label>
+          <label>Parent in this tree (optional — pick who their mother or father is, if already added)</label>
           <select id="a-parent">
             <option value="">— none / not sure —</option>
-            ${ancestors.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.relation)})</option>`).join("")}
+            ${optionsFor(editing ? editing.parent_ancestor_id : null)}
+          </select>
+        </div>
+        <div class="field">
+          <label>Spouse in this tree (optional — pick their husband or wife if already added, so they sit beside them, not below)</label>
+          <select id="a-spouse">
+            <option value="">— none / not sure —</option>
+            ${optionsFor(editing ? editing.spouse_ancestor_id : null)}
           </select>
         </div>
         <div class="field">
           <label>Born (year, place — optional)</label>
-          <input type="text" id="a-birth-year" placeholder="Year" style="margin-bottom:0.5rem" />
-          <input type="text" id="a-birth-place" placeholder="Place" />
+          <input type="text" id="a-birth-year" placeholder="Year" value="${editing && editing.birth_year ? escapeHtml(editing.birth_year) : ""}" style="margin-bottom:0.5rem" />
+          <input type="text" id="a-birth-place" placeholder="Place" value="${editing && editing.birth_place ? escapeHtml(editing.birth_place) : ""}" />
         </div>
         <div class="field">
           <label>Died (year, place — optional, leave blank if living)</label>
-          <input type="text" id="a-death-year" placeholder="Year" style="margin-bottom:0.5rem" />
-          <input type="text" id="a-death-place" placeholder="Place" />
+          <input type="text" id="a-death-year" placeholder="Year" value="${editing && editing.death_year ? escapeHtml(editing.death_year) : ""}" style="margin-bottom:0.5rem" />
+          <input type="text" id="a-death-place" placeholder="Place" value="${editing && editing.death_place ? escapeHtml(editing.death_place) : ""}" />
         </div>
         <div class="field">
           <label>What do you remember about them? Write as much as you know — specific decisions, stories, what they were like. The more detail, the better this works.</label>
-          <textarea id="a-notes" rows="8" required></textarea>
+          <textarea id="a-notes" rows="8" required>${editing ? escapeHtml(editing.notes) : ""}</textarea>
         </div>
-        <button type="submit">Add</button>
+        <button type="submit">${editing ? "Save changes" : "Add"}</button>
+        ${editing ? `<button type="button" class="secondary" id="cancel-edit-btn">Cancel</button>` : ""}
       </form>
       <p class="error" id="ancestor-error" style="display:none"></p>
     </section>`;
@@ -308,6 +324,19 @@ async function renderAncestors(familyId, familyName) {
     el.addEventListener("click", () => renderAncestorProfile(familyId, familyName, Number(el.dataset.id), el.dataset.name));
   });
 
+  app.querySelectorAll(".edit-ancestor-link").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      renderAncestors(familyId, familyName, Number(el.dataset.id));
+    });
+  });
+
+  const cancelBtn = document.getElementById("cancel-edit-btn");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => renderAncestors(familyId, familyName));
+  }
+
   app.querySelectorAll(".delete-ancestor-link").forEach(el => {
     el.addEventListener("click", async (e) => {
       e.preventDefault();
@@ -326,20 +355,23 @@ async function renderAncestors(familyId, familyName) {
     e.preventDefault();
     const errEl = document.getElementById("ancestor-error");
     errEl.style.display = "none";
+    const payload = {
+      name: document.getElementById("a-name").value,
+      relation: document.getElementById("a-relation").value,
+      birth_year: document.getElementById("a-birth-year").value || null,
+      birth_place: document.getElementById("a-birth-place").value || null,
+      death_year: document.getElementById("a-death-year").value || null,
+      death_place: document.getElementById("a-death-place").value || null,
+      notes: document.getElementById("a-notes").value,
+      parent_ancestor_id: document.getElementById("a-parent").value ? Number(document.getElementById("a-parent").value) : null,
+      spouse_ancestor_id: document.getElementById("a-spouse").value ? Number(document.getElementById("a-spouse").value) : null,
+    };
     try {
-      await api(`/api/families/${familyId}/ancestors`, {
-        method: "POST",
-        body: JSON.stringify({
-          name: document.getElementById("a-name").value,
-          relation: document.getElementById("a-relation").value,
-          birth_year: document.getElementById("a-birth-year").value || null,
-          birth_place: document.getElementById("a-birth-place").value || null,
-          death_year: document.getElementById("a-death-year").value || null,
-          death_place: document.getElementById("a-death-place").value || null,
-          notes: document.getElementById("a-notes").value,
-          parent_ancestor_id: document.getElementById("a-parent").value ? Number(document.getElementById("a-parent").value) : null,
-        }),
-      });
+      if (editing) {
+        await api(`/api/families/${familyId}/ancestors/${editing.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        await api(`/api/families/${familyId}/ancestors`, { method: "POST", body: JSON.stringify(payload) });
+      }
       renderAncestors(familyId, familyName);
     } catch (err) {
       errEl.textContent = err.message;
@@ -373,6 +405,9 @@ function renderTree(familyId, familyName, ancestors) {
               <div class="muted-inline">${escapeHtml(a.relation)}</div>
               ${a.parent_ancestor_id && byId[a.parent_ancestor_id]
                 ? `<div class="tree-parent-caption">↑ child of ${escapeHtml(byId[a.parent_ancestor_id].name)}</div>`
+                : ""}
+              ${a.spouse_ancestor_id && byId[a.spouse_ancestor_id]
+                ? `<div class="tree-parent-caption">⚭ spouse of ${escapeHtml(byId[a.spouse_ancestor_id].name)}</div>`
                 : ""}
             </div>`).join("")}
         </div>

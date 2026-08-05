@@ -43,6 +43,7 @@ class AncestorCreateRequest(BaseModel):
     death_place: str | None = None
     notes: str = Field(min_length=1)
     parent_ancestor_id: int | None = None
+    spouse_ancestor_id: int | None = None
 
 
 class AncestorUpdateRequest(BaseModel):
@@ -54,6 +55,7 @@ class AncestorUpdateRequest(BaseModel):
     death_place: str | None = None
     notes: str = Field(min_length=1)
     parent_ancestor_id: int | None = None
+    spouse_ancestor_id: int | None = None
 
 
 class AncestorSummaryResponse(BaseModel):
@@ -63,6 +65,12 @@ class AncestorSummaryResponse(BaseModel):
     created_at: datetime
     has_profile: bool
     parent_ancestor_id: int | None = None
+    spouse_ancestor_id: int | None = None
     generation: int
+    birth_year: str | None = None
+    birth_place: str | None = None
+    death_year: str | None = None
+    death_place: str | None = None
+    notes: str = ""
 
     model_config = {"from_attributes": True}

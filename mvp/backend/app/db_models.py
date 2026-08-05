@@ -59,6 +59,12 @@ class AncestorProfile(Base):
     parent_ancestor_id: Mapped[int | None] = mapped_column(
         ForeignKey("ancestor_profiles.id"), nullable=True, index=True
     )
+    # Same generation as the linked ancestor (e.g. a wife linked to her
+    # husband) — a parent link would incorrectly place them one generation
+    # below instead of beside.
+    spouse_ancestor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ancestor_profiles.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     family: Mapped["Family"] = relationship(back_populates="ancestors")

@@ -45,20 +45,20 @@ def _get_owned_ancestor(family_id: int, ancestor_id: int, user: User, db: Sessio
     return ancestor
 
 
-def _validate_parent_link(
-    family_id: int, parent_ancestor_id: int | None, self_id: int | None, db: Session
+def _validate_link(
+    family_id: int, linked_id: int | None, self_id: int | None, db: Session, what: str
 ) -> None:
-    if parent_ancestor_id is None:
+    if linked_id is None:
         return
-    if parent_ancestor_id == self_id:
-        raise HTTPException(status_code=400, detail="Someone can't be their own parent.")
-    parent = (
+    if linked_id == self_id:
+        raise HTTPException(status_code=400, detail=f"Someone can't be their own {what}.")
+    linked = (
         db.query(AncestorProfile)
-        .filter(AncestorProfile.id == parent_ancestor_id, AncestorProfile.family_id == family_id)
+        .filter(AncestorProfile.id == linked_id, AncestorProfile.family_id == family_id)
         .first()
     )
-    if parent is None:
-        raise HTTPException(status_code=400, detail="That parent isn't in this family.")
+    if linked is None:
+        raise HTTPException(status_code=400, detail=f"That {what} isn't in this family.")
 
 
 def _family_ancestors_by_id(family_id: int, db: Session) -> dict[int, AncestorProfile]:
@@ -74,7 +74,13 @@ def _summary(a: AncestorProfile, by_id: dict[int, AncestorProfile]) -> AncestorS
         created_at=a.created_at,
         has_profile=a.generated_profile_json is not None,
         parent_ancestor_id=a.parent_ancestor_id,
+        spouse_ancestor_id=a.spouse_ancestor_id,
         generation=compute_generation(a.id, by_id),
+        birth_year=a.birth_year,
+        birth_place=a.birth_place,
+        death_year=a.death_year,
+        death_place=a.death_place,
+        notes=a.notes,
     )
 
 
@@ -124,7 +130,8 @@ def create_ancestor(
     db: Session = Depends(get_db),
 ):
     family = _get_owned_family(family_id, user, db)
-    _validate_parent_link(family.id, body.parent_ancestor_id, None, db)
+    _validate_link(family.id, body.parent_ancestor_id, None, db, "parent")
+    _validate_link(family.id, body.spouse_ancestor_id, None, db, "spouse")
     ancestor = AncestorProfile(
         family_id=family.id,
         name=body.name,
@@ -135,6 +142,7 @@ def create_ancestor(
         death_place=body.death_place,
         notes=body.notes,
         parent_ancestor_id=body.parent_ancestor_id,
+        spouse_ancestor_id=body.spouse_ancestor_id,
     )
     db.add(ancestor)
     db.commit()
@@ -160,7 +168,8 @@ def update_ancestor(
     db: Session = Depends(get_db),
 ):
     ancestor = _get_owned_ancestor(family_id, ancestor_id, user, db)
-    _validate_parent_link(family_id, body.parent_ancestor_id, ancestor.id, db)
+    _validate_link(family_id, body.parent_ancestor_id, ancestor.id, db, "parent")
+    _validate_link(family_id, body.spouse_ancestor_id, ancestor.id, db, "spouse")
     ancestor.name = body.name
     ancestor.relation = body.relation
     ancestor.birth_year = body.birth_year
@@ -169,6 +178,7 @@ def update_ancestor(
     ancestor.death_place = body.death_place
     ancestor.notes = body.notes
     ancestor.parent_ancestor_id = body.parent_ancestor_id
+    ancestor.spouse_ancestor_id = body.spouse_ancestor_id
     ancestor.generated_profile_json = None  # edited notes invalidate the old generated profile
     db.commit()
     db.refresh(ancestor)
