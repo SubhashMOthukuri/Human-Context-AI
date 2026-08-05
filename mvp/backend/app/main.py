@@ -4,12 +4,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app import cache, db_models  # noqa: F401 -- import registers models on Base.metadata
-from app.db import Base, engine
+from app.db import Base, engine, run_migrations
 from app.routers import auth_router, family_router
 from app.services.context_engine import PersonNotFound, build_profile
 from app.services.llm_client import LLMNotConfigured, LLMRequestFailed
 
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 app = FastAPI(title="Human Context AI — MVP")
 

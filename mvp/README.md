@@ -109,6 +109,15 @@ model instead of a public search box.
 - **Same output shape.** Timeline, Environment, Thinking Pattern, Trajectory,
   Stage by Stage, Why — identical structure and rendering to Phase 1, reused
   via a shared `shared.js`/`shared.css` rather than duplicated.
+- **Family tree view.** Every family/ancestor list supports rename and
+  delete (delete cascades — removing a family removes everyone in it).
+  Adding someone lets you optionally pick who their parent is from people
+  already in the family; the tree lays out oldest-to-youngest, top to
+  bottom, with siblings side by side. That explicit link is what lets a
+  grandparent nest above the *specific* parent they belong to instead of
+  just floating "further up" — when it's not set, generation falls back to
+  a guess from the relation word (mother/father → one level up,
+  brother/sister → same level, and so on).
 
 ## Screenshots
 
@@ -119,6 +128,12 @@ memories, profile generated end to end.
 
 ![Generated profile — Thinking Pattern, Trajectory, Stage by Stage, Why, Environment, Timeline](results/02-ancestor-profile.png)
 
+Family tree: Grandfather Rao explicitly linked as Father Suresh's parent
+(note the "↑ child of Grandfather Rao" caption), Mother Padma placed one
+generation up from a relation-word guess alone, no link needed:
+
+![Family tree — generations laid out top to bottom](results/03-family-tree.png)
+
 ## Running it
 
 Same server as Phase 1 (`uvicorn app.main:app --reload --port 8000`) — it
@@ -128,6 +143,13 @@ alongside the Phase 1 search page at `/index.html`. Set `JWT_SECRET_KEY` in
 
 ## Still ahead
 
+- Physical/character detail fields (height, weight, appearance, behavior)
+  as their own fields on a profile, not just folded into free-text notes
+- Voice-cloned conversational chat (ElevenLabs) — the biggest lift, and
+  worth a deliberate decision before building: every response should
+  probably disclose it's a simulation and refuse to invent beyond what the
+  notes actually support, for the same reason the rest of this system
+  never presents inference as fact
 - Sharing a family across more than one account (currently ownership = the
   only member; no invite/multi-member model yet)
 - Uploads (photos, letters, documents) as evidence, not just typed notes

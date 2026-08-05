@@ -137,10 +137,20 @@ async function renderFamilies() {
     </nav>
     <section class="card">
       <h2>Your Families</h2>
+      <p class="note" style="margin-bottom:1rem">
+        A Family is one container for your whole family tree. Create ONE
+        (e.g. "The Mothukuri Family"), then add each person — Rama Krishna,
+        Renuka, Jyothi, Reddiah, ... — as a separate person *inside* it via
+        "Add Someone" on the next screen, not as separate families here.
+      </p>
       ${families.length ? families.map(f => `
         <div class="list-item" data-id="${f.id}" data-name="${escapeHtml(f.name)}">
           <span>${escapeHtml(f.name)}</span>
-          <span class="muted-inline">${new Date(f.created_at).toLocaleDateString()}</span>
+          <span class="item-actions">
+            <a href="#" class="rename-link" data-id="${f.id}" data-name="${escapeHtml(f.name)}">Rename</a>
+            <a href="#" class="delete-link" data-id="${f.id}" data-name="${escapeHtml(f.name)}">Delete</a>
+            <span class="muted-inline">${new Date(f.created_at).toLocaleDateString()}</span>
+          </span>
         </div>`).join("") : `<p class="note">No families yet — add one below.</p>`}
     </section>
     <section class="card">
@@ -156,6 +166,35 @@ async function renderFamilies() {
 
   app.querySelectorAll(".list-item").forEach(el => {
     el.addEventListener("click", () => renderAncestors(Number(el.dataset.id), el.dataset.name));
+  });
+
+  app.querySelectorAll(".rename-link").forEach(el => {
+    el.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const newName = prompt("Rename family to:", el.dataset.name);
+      if (!newName || newName === el.dataset.name) return;
+      try {
+        await api(`/api/families/${el.dataset.id}`, { method: "PATCH", body: JSON.stringify({ name: newName }) });
+        renderFamilies();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  app.querySelectorAll(".delete-link").forEach(el => {
+    el.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm(`Delete "${el.dataset.name}" and everyone in it? This can't be undone.`)) return;
+      try {
+        await api(`/api/families/${el.dataset.id}`, { method: "DELETE" });
+        renderFamilies();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
   });
 
   document.getElementById("family-form").addEventListener("submit", async (e) => {
@@ -192,11 +231,20 @@ async function renderAncestors(familyId, familyName) {
       <a href="#" id="logout-link">Log out</a>
     </nav>
     <section class="card">
-      <h2>${escapeHtml(familyName)}</h2>
+      <div class="stage-header" style="margin-bottom:1rem">
+        <h2 style="margin:0">${escapeHtml(familyName)}</h2>
+        <span class="item-actions">
+          <a href="#" id="tree-link">View as Tree</a>
+          <a href="#" id="rename-family-link">Rename this family</a>
+        </span>
+      </div>
       ${ancestors.length ? ancestors.map(a => `
         <div class="list-item" data-id="${a.id}" data-name="${escapeHtml(a.name)}">
           <span>${escapeHtml(a.name)} <span class="pill">${escapeHtml(a.relation)}</span></span>
-          <span class="muted-inline">${a.has_profile ? "Profile ready" : "Not yet explained"}</span>
+          <span class="item-actions">
+            <a href="#" class="delete-ancestor-link" data-id="${a.id}" data-name="${escapeHtml(a.name)}">Delete</a>
+            <span class="muted-inline">${a.has_profile ? "Profile ready" : "Not yet explained"}</span>
+          </span>
         </div>`).join("") : `<p class="note">No one added yet — add someone below.</p>`}
     </section>
     <section class="card">
@@ -209,6 +257,13 @@ async function renderAncestors(familyId, familyName) {
         <div class="field">
           <label>Relation to you (e.g. Grandfather, Great-grandmother)</label>
           <input type="text" id="a-relation" required />
+        </div>
+        <div class="field">
+          <label>Parent in this tree (optional — pick who their mother or father is, if already added, so the tree nests them in the right spot)</label>
+          <select id="a-parent">
+            <option value="">— none / not sure —</option>
+            ${ancestors.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.relation)})</option>`).join("")}
+          </select>
         </div>
         <div class="field">
           <label>Born (year, place — optional)</label>
@@ -232,8 +287,39 @@ async function renderAncestors(familyId, familyName) {
   document.getElementById("back-link").addEventListener("click", (e) => { e.preventDefault(); renderFamilies(); });
   document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logout(); });
 
+  document.getElementById("tree-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    renderTree(familyId, familyName, ancestors);
+  });
+
+  document.getElementById("rename-family-link").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const newName = prompt("Rename family to:", familyName);
+    if (!newName || newName === familyName) return;
+    try {
+      await api(`/api/families/${familyId}`, { method: "PATCH", body: JSON.stringify({ name: newName }) });
+      renderAncestors(familyId, newName);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
   app.querySelectorAll(".list-item").forEach(el => {
     el.addEventListener("click", () => renderAncestorProfile(familyId, familyName, Number(el.dataset.id), el.dataset.name));
+  });
+
+  app.querySelectorAll(".delete-ancestor-link").forEach(el => {
+    el.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm(`Delete "${el.dataset.name}"? This can't be undone.`)) return;
+      try {
+        await api(`/api/families/${familyId}/ancestors/${el.dataset.id}`, { method: "DELETE" });
+        renderAncestors(familyId, familyName);
+      } catch (err) {
+        alert(err.message);
+      }
+    });
   });
 
   document.getElementById("ancestor-form").addEventListener("submit", async (e) => {
@@ -251,6 +337,7 @@ async function renderAncestors(familyId, familyName) {
           death_year: document.getElementById("a-death-year").value || null,
           death_place: document.getElementById("a-death-place").value || null,
           notes: document.getElementById("a-notes").value,
+          parent_ancestor_id: document.getElementById("a-parent").value ? Number(document.getElementById("a-parent").value) : null,
         }),
       });
       renderAncestors(familyId, familyName);
@@ -258,6 +345,55 @@ async function renderAncestors(familyId, familyName) {
       errEl.textContent = err.message;
       errEl.style.display = "block";
     }
+  });
+}
+
+// ---------- Tree screen ----------
+function renderTree(familyId, familyName, ancestors) {
+  const byId = {};
+  ancestors.forEach(a => { byId[a.id] = a; });
+
+  const generations = {};
+  ancestors.forEach(a => {
+    (generations[a.generation] = generations[a.generation] || []).push(a);
+  });
+  const genKeys = Object.keys(generations).map(Number).sort((x, y) => y - x); // oldest (highest) first
+
+  const rowsHtml = genKeys.map(g => {
+    const label = g > 0 ? `${g} generation${g > 1 ? "s" : ""} above you`
+      : g < 0 ? `${-g} generation${-g > 1 ? "s" : ""} below you`
+      : "Your generation";
+    return `
+      <div class="tree-row">
+        <div class="tree-row-label">${escapeHtml(label)}</div>
+        <div class="tree-row-nodes">
+          ${generations[g].map(a => `
+            <div class="tree-node" data-id="${a.id}" data-name="${escapeHtml(a.name)}">
+              <strong>${escapeHtml(a.name)}</strong>
+              <div class="muted-inline">${escapeHtml(a.relation)}</div>
+              ${a.parent_ancestor_id && byId[a.parent_ancestor_id]
+                ? `<div class="tree-parent-caption">↑ child of ${escapeHtml(byId[a.parent_ancestor_id].name)}</div>`
+                : ""}
+            </div>`).join("")}
+        </div>
+      </div>`;
+  }).join("");
+
+  app.innerHTML = `
+    <nav class="topbar">
+      <a href="#" id="back-link">← ${escapeHtml(familyName)}</a>
+      <a href="#" id="logout-link">Log out</a>
+    </nav>
+    <section class="card">
+      <h2>${escapeHtml(familyName)} — Family Tree</h2>
+      <p class="note">Oldest generation at top, youngest at bottom. Generation is set automatically from "Parent in this tree" links, or guessed from the relation word when that's not set. Click anyone to see their full profile.</p>
+      ${rowsHtml}
+    </section>`;
+
+  document.getElementById("back-link").addEventListener("click", (e) => { e.preventDefault(); renderAncestors(familyId, familyName); });
+  document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logout(); });
+  app.querySelectorAll(".tree-node").forEach(el => {
+    el.addEventListener("click", () => renderAncestorProfile(familyId, familyName, Number(el.dataset.id), el.dataset.name));
   });
 }
 

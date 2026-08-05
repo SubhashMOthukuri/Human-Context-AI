@@ -22,6 +22,10 @@ class FamilyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
 
+class FamilyUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
 class FamilyResponse(BaseModel):
     id: int
     name: str
@@ -38,6 +42,18 @@ class AncestorCreateRequest(BaseModel):
     death_year: str | None = None
     death_place: str | None = None
     notes: str = Field(min_length=1)
+    parent_ancestor_id: int | None = None
+
+
+class AncestorUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    relation: str = Field(min_length=1, max_length=100)
+    birth_year: str | None = None
+    birth_place: str | None = None
+    death_year: str | None = None
+    death_place: str | None = None
+    notes: str = Field(min_length=1)
+    parent_ancestor_id: int | None = None
 
 
 class AncestorSummaryResponse(BaseModel):
@@ -46,5 +62,7 @@ class AncestorSummaryResponse(BaseModel):
     relation: str
     created_at: datetime
     has_profile: bool
+    parent_ancestor_id: int | None = None
+    generation: int
 
     model_config = {"from_attributes": True}

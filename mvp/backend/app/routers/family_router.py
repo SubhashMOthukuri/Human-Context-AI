@@ -6,7 +6,15 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import get_db
 from app.db_models import AncestorProfile, Family, User
-from app.schemas import AncestorCreateRequest, AncestorSummaryResponse, FamilyCreateRequest, FamilyResponse
+from app.genealogy import compute_generation
+from app.schemas import (
+    AncestorCreateRequest,
+    AncestorSummaryResponse,
+    AncestorUpdateRequest,
+    FamilyCreateRequest,
+    FamilyResponse,
+    FamilyUpdateRequest,
+)
 from app.services.family_context_engine import build_family_profile
 from app.services.llm_client import LLMNotConfigured, LLMRequestFailed
 
@@ -37,6 +45,39 @@ def _get_owned_ancestor(family_id: int, ancestor_id: int, user: User, db: Sessio
     return ancestor
 
 
+def _validate_parent_link(
+    family_id: int, parent_ancestor_id: int | None, self_id: int | None, db: Session
+) -> None:
+    if parent_ancestor_id is None:
+        return
+    if parent_ancestor_id == self_id:
+        raise HTTPException(status_code=400, detail="Someone can't be their own parent.")
+    parent = (
+        db.query(AncestorProfile)
+        .filter(AncestorProfile.id == parent_ancestor_id, AncestorProfile.family_id == family_id)
+        .first()
+    )
+    if parent is None:
+        raise HTTPException(status_code=400, detail="That parent isn't in this family.")
+
+
+def _family_ancestors_by_id(family_id: int, db: Session) -> dict[int, AncestorProfile]:
+    rows = db.query(AncestorProfile).filter(AncestorProfile.family_id == family_id).all()
+    return {a.id: a for a in rows}
+
+
+def _summary(a: AncestorProfile, by_id: dict[int, AncestorProfile]) -> AncestorSummaryResponse:
+    return AncestorSummaryResponse(
+        id=a.id,
+        name=a.name,
+        relation=a.relation,
+        created_at=a.created_at,
+        has_profile=a.generated_profile_json is not None,
+        parent_ancestor_id=a.parent_ancestor_id,
+        generation=compute_generation(a.id, by_id),
+    )
+
+
 @router.post("", response_model=FamilyResponse)
 def create_family(
     body: FamilyCreateRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -53,6 +94,28 @@ def list_families(user: User = Depends(get_current_user), db: Session = Depends(
     return db.query(Family).filter(Family.owner_user_id == user.id).order_by(Family.created_at).all()
 
 
+@router.patch("/{family_id}", response_model=FamilyResponse)
+def rename_family(
+    family_id: int,
+    body: FamilyUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    family = _get_owned_family(family_id, user, db)
+    family.name = body.name
+    db.commit()
+    db.refresh(family)
+    return family
+
+
+@router.delete("/{family_id}")
+def delete_family(family_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    family = _get_owned_family(family_id, user, db)
+    db.delete(family)  # cascades to its ancestors (cascade="all, delete-orphan")
+    db.commit()
+    return {"deleted": True}
+
+
 @router.post("/{family_id}/ancestors", response_model=AncestorSummaryResponse)
 def create_ancestor(
     family_id: int,
@@ -61,6 +124,7 @@ def create_ancestor(
     db: Session = Depends(get_db),
 ):
     family = _get_owned_family(family_id, user, db)
+    _validate_parent_link(family.id, body.parent_ancestor_id, None, db)
     ancestor = AncestorProfile(
         family_id=family.id,
         name=body.name,
@@ -70,38 +134,46 @@ def create_ancestor(
         death_year=body.death_year,
         death_place=body.death_place,
         notes=body.notes,
+        parent_ancestor_id=body.parent_ancestor_id,
     )
     db.add(ancestor)
     db.commit()
     db.refresh(ancestor)
-    return AncestorSummaryResponse(
-        id=ancestor.id,
-        name=ancestor.name,
-        relation=ancestor.relation,
-        created_at=ancestor.created_at,
-        has_profile=False,
-    )
+    by_id = _family_ancestors_by_id(family.id, db)
+    return _summary(ancestor, by_id)
 
 
 @router.get("/{family_id}/ancestors", response_model=list[AncestorSummaryResponse])
 def list_ancestors(family_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     family = _get_owned_family(family_id, user, db)
-    ancestors = (
-        db.query(AncestorProfile)
-        .filter(AncestorProfile.family_id == family.id)
-        .order_by(AncestorProfile.created_at)
-        .all()
-    )
-    return [
-        AncestorSummaryResponse(
-            id=a.id,
-            name=a.name,
-            relation=a.relation,
-            created_at=a.created_at,
-            has_profile=a.generated_profile_json is not None,
-        )
-        for a in ancestors
-    ]
+    by_id = _family_ancestors_by_id(family.id, db)
+    ancestors = sorted(by_id.values(), key=lambda a: a.created_at)
+    return [_summary(a, by_id) for a in ancestors]
+
+
+@router.patch("/{family_id}/ancestors/{ancestor_id}", response_model=AncestorSummaryResponse)
+def update_ancestor(
+    family_id: int,
+    ancestor_id: int,
+    body: AncestorUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ancestor = _get_owned_ancestor(family_id, ancestor_id, user, db)
+    _validate_parent_link(family_id, body.parent_ancestor_id, ancestor.id, db)
+    ancestor.name = body.name
+    ancestor.relation = body.relation
+    ancestor.birth_year = body.birth_year
+    ancestor.birth_place = body.birth_place
+    ancestor.death_year = body.death_year
+    ancestor.death_place = body.death_place
+    ancestor.notes = body.notes
+    ancestor.parent_ancestor_id = body.parent_ancestor_id
+    ancestor.generated_profile_json = None  # edited notes invalidate the old generated profile
+    db.commit()
+    db.refresh(ancestor)
+    by_id = _family_ancestors_by_id(ancestor.family_id, db)
+    return _summary(ancestor, by_id)
 
 
 @router.get("/{family_id}/ancestors/{ancestor_id}/profile")

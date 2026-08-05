@@ -52,6 +52,13 @@ class AncestorProfile(Base):
     death_place: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str] = mapped_column(Text)
     generated_profile_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Explicit tree placement: this person is a CHILD of the linked ancestor.
+    # Optional — when unset, generation is guessed from `relation` instead.
+    # This is what lets a grandfather nest above the correct parent instead
+    # of just floating generically "further up."
+    parent_ancestor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ancestor_profiles.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     family: Mapped["Family"] = relationship(back_populates="ancestors")
